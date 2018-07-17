@@ -22,35 +22,50 @@ function unusedVariableMessage(varName, opName) {
 /**
  * No unused variables
  *
- * A GraphQL operation is only valid if all variables defined by an operation
- * are used, either directly or within a spread fragment.
+ * A GraphQL definition is only valid if all variables defined by that
+ * definition are used, either directly or within a spread fragment.
+ *
+ * NOTE: if experimentalFragmentVariables are used, then fragments with
+ * variables defined are considered independent "executable definitions".
+ * So `query Foo` must not define `$a` when `$a` is only used inside
+ * `fragment FragA($a: Type)`
  */
 
 
 function NoUnusedVariables(context) {
   var variableDefs = [];
-  return {
-    OperationDefinition: {
-      enter: function enter() {
-        variableDefs = [];
-      },
-      leave: function leave(operation) {
-        var variableNameUsed = Object.create(null);
-        var usages = context.getRecursiveVariableUsages(operation);
-        var opName = operation.name ? operation.name.value : null;
-        usages.forEach(function (_ref) {
-          var node = _ref.node;
-          variableNameUsed[node.name.value] = true;
-        });
-        variableDefs.forEach(function (variableDef) {
-          var variableName = variableDef.variable.name.value;
-
-          if (variableNameUsed[variableName] !== true) {
-            context.reportError(new _error.GraphQLError(unusedVariableMessage(variableName, opName), [variableDef]));
-          }
-        });
+  var executableDefinitionVisitor = {
+    enter: function enter(definition) {
+      if (!context.isExecutableDefinitionWithVariables(definition)) {
+        return;
       }
+
+      variableDefs = [];
     },
+    leave: function leave(definition) {
+      if (!context.isExecutableDefinitionWithVariables(definition)) {
+        return;
+      }
+
+      var variableNameUsed = Object.create(null);
+      var usages = context.getRecursiveVariableUsages(definition);
+      var opName = definition.name ? definition.name.value : null;
+      usages.forEach(function (_ref) {
+        var node = _ref.node;
+        variableNameUsed[node.name.value] = true;
+      });
+      variableDefs.forEach(function (variableDef) {
+        var variableName = variableDef.variable.name.value;
+
+        if (variableNameUsed[variableName] !== true) {
+          context.reportError(new _error.GraphQLError(unusedVariableMessage(variableName, opName), [variableDef]));
+        }
+      });
+    }
+  };
+  return {
+    OperationDefinition: executableDefinitionVisitor,
+    FragmentDefinition: executableDefinitionVisitor,
     VariableDefinition: function VariableDefinition(def) {
       variableDefs.push(def);
     }

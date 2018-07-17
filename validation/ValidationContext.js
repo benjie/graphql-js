@@ -114,14 +114,22 @@ function () {
 
     return spreads;
   };
+  /*
+   * Finds all fragments referenced via the definition, recursively.
+   *
+   * NOTE: if experimentalFragmentVariables are being used, it excludes all
+   * fragments with their own variable definitions: these are considered their
+   * own "root" executable definition.
+   */
 
-  _proto.getRecursivelyReferencedFragments = function getRecursivelyReferencedFragments(operation) {
-    var fragments = this._recursivelyReferencedFragments.get(operation);
+
+  _proto.getRecursivelyReferencedFragments = function getRecursivelyReferencedFragments(definition) {
+    var fragments = this._recursivelyReferencedFragments.get(definition);
 
     if (!fragments) {
       fragments = [];
       var collectedNames = Object.create(null);
-      var nodesToVisit = [operation.selectionSet];
+      var nodesToVisit = [definition.selectionSet];
 
       while (nodesToVisit.length !== 0) {
         var node = nodesToVisit.pop();
@@ -134,7 +142,7 @@ function () {
             collectedNames[fragName] = true;
             var fragment = this.getFragment(fragName);
 
-            if (fragment) {
+            if (fragment && !this.isExecutableDefinitionWithVariables(fragment)) {
               fragments.push(fragment);
               nodesToVisit.push(fragment.selectionSet);
             }
@@ -142,7 +150,7 @@ function () {
         }
       }
 
-      this._recursivelyReferencedFragments.set(operation, fragments);
+      this._recursivelyReferencedFragments.set(definition, fragments);
     }
 
     return fragments;
@@ -173,19 +181,27 @@ function () {
 
     return usages;
   };
+  /*
+   * Finds all variables used by the definition, recursively.
+   *
+   * NOTE: if experimentalFragmentVariables are being used, it excludes all
+   * fragments with their own variable definitions: these are considered their
+   * own independent executable definition for the purposes of variable usage.
+   */
 
-  _proto.getRecursiveVariableUsages = function getRecursiveVariableUsages(operation) {
-    var usages = this._recursiveVariableUsages.get(operation);
+
+  _proto.getRecursiveVariableUsages = function getRecursiveVariableUsages(definition) {
+    var usages = this._recursiveVariableUsages.get(definition);
 
     if (!usages) {
-      usages = this.getVariableUsages(operation);
-      var fragments = this.getRecursivelyReferencedFragments(operation);
+      usages = this.getVariableUsages(definition);
+      var fragments = this.getRecursivelyReferencedFragments(definition);
 
       for (var i = 0; i < fragments.length; i++) {
         Array.prototype.push.apply(usages, this.getVariableUsages(fragments[i]));
       }
 
-      this._recursiveVariableUsages.set(operation, usages);
+      this._recursiveVariableUsages.set(definition, usages);
     }
 
     return usages;
@@ -217,6 +233,11 @@ function () {
 
   _proto.getArgument = function getArgument() {
     return this._typeInfo.getArgument();
+  }; // All OperationDefinitions, or FragmentDefinitions with variable definitions
+
+
+  _proto.isExecutableDefinitionWithVariables = function isExecutableDefinitionWithVariables(definition) {
+    return definition.kind === _kinds.Kind.OPERATION_DEFINITION || definition.variableDefinitions != null && definition.variableDefinitions.length > 0;
   };
 
   return ValidationContext;
